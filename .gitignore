@@ -3,3 +3,5 @@ notes.txt
 .env
 *.png
 Pipfile.lock
+sessions
+constants.js

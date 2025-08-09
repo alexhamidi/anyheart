@@ -203,7 +203,11 @@ def replacement_apply(processed_html, replacements):
 
 
 def create_agent_session(
-    session_id: str, html: str, query: str, max_iterations: int = 5
+    session_id: str,
+    html: str,
+    query: str,
+    max_iterations: int = 5,
+    initial_screenshot: Optional[str] = None,
 ) -> dict:
     """Create a new agent session"""
 
@@ -222,6 +226,7 @@ def create_agent_session(
         "current_processed_html": processed_html,  # Current processed HTML
         "replacements": replacements,  # Store replacements for post-processing
         "original_query": query,
+        "initial_screenshot": initial_screenshot,  # Store initial screenshot for agent context
         "iterations": [],
         "created_at": now,
         "updated_at": now,

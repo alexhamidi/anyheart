@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
       stalkerModeBtn.classList.add('active');
       stalkerModeBtn.title = 'Stop Capture Mode';
 
-      updateStatus('Capture mode started - taking screenshots every 5 seconds', 'info');
+      updateStatus('capturing', 'info');
 
       // Take initial screenshot
       await takeScreenshot();
@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
         captureInterval = null;
       }
 
-      updateStatus('Capture mode stopped', 'success');
+      updateStatus('stopped', 'success');
     }
   });
 
@@ -93,16 +93,16 @@ document.addEventListener('DOMContentLoaded', () => {
         URL.revokeObjectURL(url);
 
         if (isCapturingActive) {
-          updateStatus(`Capture active - Screenshot saved as ${filename}`, 'info');
+          updateStatus('captured', 'info');
         } else {
-          updateStatus(`Screenshot saved as ${filename}`, 'success');
+          updateStatus('saved', 'success');
         }
       } else {
-        updateStatus('Failed to take screenshot', 'error');
+        updateStatus('failed', 'error');
       }
     } catch (error) {
       console.error('Error taking screenshot:', error);
-      updateStatus('Error taking screenshot: ' + error.message, 'error');
+      updateStatus('error', 'error');
     }
   }
 
@@ -112,18 +112,18 @@ document.addEventListener('DOMContentLoaded', () => {
       // Clear all extension local storage
       await chrome.storage.local.clear();
 
-      updateStatus('all local storage cleared', 'success');
+      updateStatus('cleared', 'success');
       console.log('All extension local storage has been cleared');
     } catch (error) {
       console.error('Error clearing local storage:', error);
-      updateStatus('error clearing local storage', 'error');
+      updateStatus('error', 'error');
     }
   });
 
   // Export URL functionality
   exportUrlBtn.addEventListener('click', async () => {
     try {
-      updateStatus('Creating shareable URL...', 'info');
+      updateStatus('creating...', 'info');
 
       const tabs = await new Promise(resolve => {
         chrome.tabs.query({ active: true, currentWindow: true }, resolve);
@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (response && response.html) {
         // Create shareable configuration via API
-        const shareResponse = await fetch('http://localhost:8008/api/share', {
+        const shareResponse = await fetch(`${BACKEND_URL}/api/share`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -181,12 +181,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatus('link copied to clipboard', 'success');
 
       } else {
-        updateStatus('Could not get page content', 'error');
+        updateStatus('failed', 'error');
       }
 
     } catch (error) {
       console.error('Error creating shareable URL:', error);
-      updateStatus(`Error creating shareable URL: ${error.message}`, 'error');
+      updateStatus('error', 'error');
     }
   });
 
@@ -352,11 +352,35 @@ document.addEventListener('DOMContentLoaded', () => {
       const userPrompt = input.value;
       addMessageToConversation('User', userPrompt);
 
-      updateStatus('Starting AI agent session...');
+      updateStatus('capturing initial state...');
+
+      // Take initial screenshot before starting agent session
+      let initialScreenshot = null;
+      try {
+        const screenshotResponse = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({ action: 'takeScreenshot' }, (response) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              resolve(response);
+            }
+          });
+        });
+
+        if (screenshotResponse.success && screenshotResponse.screenshot) {
+          initialScreenshot = screenshotResponse.screenshot;
+          console.log('Captured initial screenshot for agent context');
+        }
+      } catch (error) {
+        console.error('Error taking initial screenshot:', error);
+        // Continue without screenshot - don't fail the entire process
+      }
+
+      updateStatus('starting...');
 
       try {
-        // Start agent session
-        const sessionResponse = await fetch('http://localhost:8008/agent/start', {
+        // Start agent session with initial screenshot
+        const sessionResponse = await fetch(`${BACKEND_URL}/agent/start`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -364,6 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({
             query: input.value,
             html: response.html,
+            initial_screenshot: initialScreenshot,
             model_type: 'gemini'
           })
         });
@@ -375,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionData = await sessionResponse.json();
         currentAgentSession = sessionData.session_id;
 
-        updateStatus(`Agent session started: ${currentAgentSession.substring(0, 8)}...`);
+        updateStatus('connected');
 
         // Clear input
         input.value = '';
@@ -385,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       } catch (error) {
         console.error('Error starting agent session:', error);
-        updateStatus(`Error starting agent session: ${error.message}`, 'error');
+        updateStatus('error', 'error');
       }
     }
   }
@@ -395,12 +420,12 @@ document.addEventListener('DOMContentLoaded', () => {
       agentWebSocket.close();
     }
 
-    const wsUrl = `ws://localhost:8008/agent/${sessionId}/ws`;
+    const wsUrl = `${BACKEND_URL.replace('http', 'ws')}/agent/${sessionId}/ws`;
     agentWebSocket = new WebSocket(wsUrl);
 
     agentWebSocket.onopen = () => {
       console.log('WebSocket connected');
-      updateStatus('Connected to agent session');
+      updateStatus('ready');
     };
 
     agentWebSocket.onmessage = async (event) => {
@@ -418,17 +443,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
           addMessageToConversation('Assistant', message.message);
           addMessageToConversation('System', 'Applied HTML changes to page');
-          updateStatus(`Iteration ${message.iteration} - Applied changes, waiting for observation...`);
+          updateStatus('observing');
 
         } else if (message.type === 'completed') {
           addMessageToConversation('System', 'Agent session completed successfully');
-          updateStatus('Agent session completed!', 'success');
+          updateStatus('completed', 'success');
           agentWebSocket.close();
           currentAgentSession = null;
 
         } else if (message.type === 'error') {
           addMessageToConversation('System', `Agent session failed: ${message.message}`);
-          updateStatus(`Agent session failed: ${message.message}`, 'error');
+          updateStatus('failed', 'error');
           agentWebSocket.close();
           currentAgentSession = null;
         } else if (message.type === 'agent_message') {
@@ -437,7 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (message.type === 'status_update') {
           // Handle status updates
           addMessageToConversation('System', message.message || message.content);
-          updateStatus(message.message || message.content, 'info');
+          updateStatus('processing', 'info');
         } else {
           // Handle any other message types from the agent
           if (message.message || message.content) {
@@ -457,7 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     agentWebSocket.onerror = (error) => {
       console.error('WebSocket error:', error);
-      updateStatus('WebSocket connection error', 'error');
+      updateStatus('error', 'error');
     };
   }
 

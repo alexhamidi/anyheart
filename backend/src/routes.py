@@ -36,6 +36,7 @@ class StartAgentRequest(BaseModel):
     html: str
     query: str
     model_type: str = "gemini"
+    initial_screenshot: Optional[str] = None
 
 
 class StartAgentResponse(BaseModel):
@@ -87,7 +88,13 @@ async def start_agent_session(request: StartAgentRequest):
     MAX_ITERATIONS = 10
 
     try:
-        create_agent_session(session_id, request.html, request.query, MAX_ITERATIONS)
+        create_agent_session(
+            session_id,
+            request.html,
+            request.query,
+            MAX_ITERATIONS,
+            request.initial_screenshot,
+        )
         logger.info(f"Agent session {session_id} created")
 
         return StartAgentResponse(

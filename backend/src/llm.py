@@ -63,6 +63,31 @@ def get_prompt(session_id: str) -> tuple[str, List[str]]:
     image_path = None
     agent_iterations = 0
 
+    # Check if this is the first iteration and we have an initial screenshot
+    if len(session["iterations"]) == 0 and session.get("initial_screenshot"):
+        # Save initial screenshot to file for the first LLM call
+        screenshot_dir = "screenshots"
+        os.makedirs(screenshot_dir, exist_ok=True)
+
+        import base64
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        image_filename = f"{session_id}_initial_{timestamp}.png"
+        image_path = os.path.join(screenshot_dir, image_filename)
+
+        image_data = session["initial_screenshot"]
+        if image_data.startswith("data:image"):
+            image_data = image_data.split(",")[1]
+
+        with open(image_path, "wb") as f:
+            f.write(base64.b64decode(image_data))
+
+        context_parts.append("Initial screenshot of the webpage provided for context.")
+        logger.info(
+            f"Saved initial screenshot for session {session_id} to {image_path}"
+        )
+
     for iteration in session["iterations"]:
         if iteration["role"] == "user":
             if iteration.get("content"):
@@ -93,7 +118,22 @@ def get_prompt(session_id: str) -> tuple[str, List[str]]:
     # Build image context if screenshot is available
     image_context = ""
     if image_path:
-        image_context = """
+        if agent_iterations == 0:
+            # Initial screenshot context
+            image_context = """
+<image_attached>
+You have a screenshot attached showing the initial state of the webpage before any edits.
+This image shows the current visual appearance and can help you understand:
+- The existing layout and design
+- Current styling and visual elements
+- What the user is looking at when they made their request
+- The baseline state you'll be modifying
+
+Use this visual context to better understand the user's request and plan appropriate changes to achieve their desired outcome.
+</image_attached>"""
+        else:
+            # Feedback screenshot context
+            image_context = """
 <image_attached>
 You have a screenshot attached showing the current state of the webpage after your previous edits. 
 This image represents the visual result of your changes and can help you understand:
