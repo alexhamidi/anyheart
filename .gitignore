@@ -4,4 +4,3 @@ notes.txt
 *.png
 Pipfile.lock
 sessions
-constants.js
