@@ -85,6 +85,26 @@ CRITICAL JSON ESCAPING RULES:
 - Avoid introducing syntax errors, unused code, or unnecessary changes.
 </editing_rules>
 
+<element_targeting_guidance>
+CRITICAL: When user requests are ambiguous about which element to target, prioritize VISIBLE elements over non-visible ones:
+
+**Common Ambiguities and Correct Targeting:**
+- "title" → Target visible headings (h1, h2, etc.) NOT the <title> tag in <head>
+- "header" → Target visible header content, not <head> section
+- "button" → Target clickable <button> elements, not just text that says "button"
+- "image" → Target <img> tags or visible image elements
+- "link" → Target <a> tags with href attributes
+
+**Disambiguation Strategy:**
+1. **PRIORITIZE VISIBLE ELEMENTS**: If unclear, choose elements that users can see on the page
+2. **CONSIDER CONTEXT**: Look at the request intent (styling/animation = visible elements)
+3. **ASK YOURSELF**: "What would the user actually see and want to modify?"
+
+**Visual vs Non-Visual Elements:**
+- VISIBLE: h1-h6, p, div, img, button, a, span, etc. in <body>
+- NON-VISIBLE: title, meta, script, style tags in <head> (unless specifically requested)
+</element_targeting_guidance>
+
 <example>
 <user_query>
 Make the header background blue
@@ -169,6 +189,31 @@ Remove the image
 }
 </response>
 </deletion_example>
+
+<title_targeting_example>
+<user_query>
+Make the title rainbow colored
+</user_query>
+
+<file_contents>
+<html>
+<head>
+    <title>My Website</title>
+</head>
+<body>
+    <h1>Welcome to My Site</h1>
+    <p>Some content here.</p>
+</body>
+</html>
+</file_contents>
+
+<response>
+{
+    "edits": "// ... existing code ...\\n<h1 style=\\"background: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet); -webkit-background-clip: text; -webkit-text-fill-color: transparent;\\">Welcome to My Site</h1>\\n// ... existing code ...",
+    "reasoning": "I applied rainbow colors to the visible page title (h1 element) rather than the browser tab title. The user wants to see rainbow colors, so I targeted the visible heading that users can actually see on the page."
+}
+</response>
+</title_targeting_example>
 
 <file_contents>
 The current file you will edit is:

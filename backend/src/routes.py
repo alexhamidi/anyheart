@@ -113,9 +113,6 @@ async def start_agent_session(request: StartAgentRequest):
 # --- legacy http endpoints removed - now using websocket ---
 
 
-# --- URL Sharing API Endpoints ---
-
-
 @router.post("/api/share", response_model=CreateShareResponse)
 async def create_shared_configuration(request: CreateShareRequest):
     """Create a shareable configuration that can be accessed via URL parameter"""

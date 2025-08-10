@@ -247,7 +247,7 @@ class AgentStateMachine:
 
             # Create filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"session_{self.session_id}_{timestamp}.json"
+            filename = f"session_{timestamp}_{self.session_id}.json"
             filepath = os.path.join(sessions_dir, filename)
 
             # Save session data as JSON

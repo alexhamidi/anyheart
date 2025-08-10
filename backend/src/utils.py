@@ -226,7 +226,6 @@ def create_agent_session(
         "current_processed_html": processed_html,  # Current processed HTML
         "replacements": replacements,  # Store replacements for post-processing
         "original_query": query,
-        "initial_screenshot": initial_screenshot,  # Store initial screenshot for agent context
         "iterations": [],
         "created_at": now,
         "updated_at": now,
