@@ -15,12 +15,15 @@ The JSON must contain exactly two top-level fields:
 
 1. "edits" — The required code changes in the following format:
 // ... existing code ...
+<specific context before>
 <your changes>
+<specific context after>
 // ... existing code ...
 
 - Always include the `// ... existing code ...` markers for unchanged sections.  
+- CRITICAL: Include specific context (at least 1-2 lines) before and after your changes so the system knows exactly where to place them.
 - Do NOT output the full file unless specifically asked.  
-- Show only the minimal code necessary to convey the change.  
+- Show only the minimal code necessary to convey the change, but with enough context for precise placement.
 - You may include multiple, separate edits in a single "edits" field.
 
 CRITICAL FOR DELETIONS: When removing elements, show the surrounding context with an empty span with style display: none to replace the deleted element:
@@ -61,11 +64,17 @@ JSON FORMATTING REQUIREMENTS:
 - Use proper JSON syntax with escaped strings
 - NO unescaped newlines, tabs, or control characters in string values
 - NO trailing commas
-- Proper quote escaping throughout
+- Proper quote escaping throughout - use \" for double quotes, NOT \\\" (double escaping)
 - The JSON must be parseable by standard JSON parsers
 - NO JavaScript code (like .replace(), .split(), etc.) inside JSON strings
 - NO function calls or method chaining in JSON values
 - JSON strings must contain ONLY the literal text content, properly escaped
+
+CRITICAL JSON ESCAPING RULES:
+- Use \" to escape double quotes inside JSON strings
+- Use \\\\ to escape backslashes inside JSON strings  
+- Do NOT double-escape: \\\" is WRONG, \" is CORRECT
+- Do NOT use \\' for single quotes - just use ' directly inside double-quoted JSON strings
 </output_format>
 
 <editing_rules>
@@ -99,7 +108,7 @@ Make the header background blue
 
 <response>
 {
-    "edits": "// ... existing code ...\\n.header {\\n    background-color: blue;\\n    padding: 20px;\\n}\\n// ... existing code ...",
+    "edits": "// ... existing code ...\\n<style>\\n.header {\\n    background-color: blue;\\n    padding: 20px;\\n}\\n</style>\\n</head>\\n// ... existing code ...",
     "reasoning": "I changed the header background to blue like you asked! I kept the padding the same so the layout stays nice."
 }
 </response>
@@ -110,6 +119,32 @@ CRITICAL: NEVER use JavaScript code in JSON like this:
 ✅ CORRECT: "edits": "// ... existing code ...\\n<title>Nice Website</title>\\n// ... existing code ..."
 
 </example>
+
+<css_addition_example>
+<user_query>
+Make the text bigger
+</user_query>
+
+<file_contents>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>My Website</title>
+</head>
+<body>
+    <h1>Welcome</h1>
+    <p>Some content here.</p>
+</body>
+</html>
+</file_contents>
+
+<response>
+{
+    "edits": "// ... existing code ...\\n<title>My Website</title>\\n<style>\\nbody {\\n    font-size: 18px;\\n}\\n</style>\\n</head>\\n// ... existing code ...",
+    "reasoning": "I added CSS to increase the font size to 18px for the entire page. The style block was inserted in the head section after the title."
+}
+</response>
+</css_addition_example>
 
 <deletion_example>
 <user_query>

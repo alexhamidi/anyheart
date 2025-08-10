@@ -242,21 +242,50 @@ def forward(
             try:
                 result = json.loads(json_text)
             except json.JSONDecodeError as e:
+                logger.warning(f"JSON parsing failed, attempting to fix: {e}")
+                # Try to clean up the JSON
+                import re
+
+                cleaned_json = json_text
+
+                # Fix common LLM JSON escaping errors
+
+                # Fix double-escaped quotes: \\\" -> \"
+                cleaned_json = re.sub(r"\\\\\"", r"\"", cleaned_json)
+                # Fix double-escaped single quotes: \\\' -> \'
+                cleaned_json = re.sub(r"\\\\\'", r"\'", cleaned_json)
+
+                # Fix invalid escape sequences in JSON strings
+                # Remove backslashes before characters that don't need escaping in JSON
+                # Valid JSON escape sequences are: \" \\ \/ \b \f \n \r \t \uXXXX
+                # Everything else should not have a backslash
+
+                # This regex finds strings and fixes invalid escapes within them
+                def fix_string_escapes(match):
+                    string_content = match.group(1)
+                    # Fix invalid escapes - remove backslashes before characters that don't need them
+                    # Keep valid escapes: \" \\ \/ \b \f \n \r \t \u
+                    fixed = re.sub(r'\\([^"\\\/bfnrtu])', r"\1", string_content)
+                    return f'"{fixed}"'
+
+                # Apply the fix to all JSON string values
+                cleaned_json = re.sub(
+                    r'"((?:[^"\\]|\\.)*)\"', fix_string_escapes, cleaned_json
+                )
+
                 # Check if the model tried to use JavaScript methods or generated multiple JSON objects
                 if (
-                    ".replace(" in json_text
-                    or ".split(" in json_text
-                    or ".join(" in json_text
-                    or json_text.count("{") > 1
+                    ".replace(" in cleaned_json
+                    or ".split(" in cleaned_json
+                    or ".join(" in cleaned_json
+                    or cleaned_json.count("{") > 1
                 ):
                     logger.warning(
-                        f"Model used JavaScript methods or multiple JSON objects, attempting to fix: {e}"
+                        "Model used JavaScript methods or multiple JSON objects, cleaning..."
                     )
-                    # Try to clean up the JSON
-                    import re
 
                     # First, if there are multiple JSON objects, take only the first complete one
-                    lines = json_text.split("\n")
+                    lines = cleaned_json.split("\n")
                     json_lines = []
                     brace_count = 0
                     found_first_object = False
@@ -289,13 +318,15 @@ def forward(
                         cleaned_json,
                     )
 
-                    # Try parsing the cleaned JSON
-                    try:
-                        result = json.loads(cleaned_json)
-                        logger.info("Successfully cleaned malformed JSON")
-                    except json.JSONDecodeError:
-                        raise e  # Re-raise original error if cleaning didn't work
-                else:
+                # Try parsing the cleaned JSON
+                try:
+                    result = json.loads(cleaned_json)
+                    logger.info("Successfully cleaned malformed JSON")
+                except json.JSONDecodeError as parse_error:
+                    logger.error(
+                        f"Still unable to parse JSON after cleaning: {parse_error}"
+                    )
+
                     raise e  # Re-raise original error
             edits = result.get("edits", "")
             reasoning = result.get("reasoning", "")

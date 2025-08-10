@@ -1,5 +1,11 @@
 // Enhanced content script with AI agent observer capabilities and HTML persistence
 
+// Get backend URL - matches constants.js
+const getBackendURL = () => {
+    // return "https://anyheart.onrender.com"; // Production
+    return "http://localhost:8008"; // Development
+};
+
 // HTML Persistence Manager
 class HTMLPersistenceManager {
     constructor() {
@@ -385,7 +391,7 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
         console.log('Found aid parameter:', shareId, 'attempting to load shared configuration...');
 
         // Fetch shared configuration from backend
-        const response = await fetch(`http://localhost:8008/api/share/${shareId}`);
+        const response = await fetch(`${getBackendURL()}/api/share/${shareId}`);
 
         if (!response.ok) {
             if (response.status === 404) {
