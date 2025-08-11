@@ -5,28 +5,16 @@ LLM module for handling AI model interactions
 import base64
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
-from src.utils import get_html_updates
+
 from src.prompt import prompt
-from google import genai
-from google.genai import types
 from src.logger import get_logger
 import os
 import openai
-import anthropic
 import config
 
 logger = get_logger(__name__)
 
-# Initialize clients
-gemini_client = genai.Client()
-openai_client = (
-    openai.OpenAI(api_key=config.OPENAI_API_KEY) if config.OPENAI_API_KEY else None
-)
-anthropic_client = (
-    anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-    if hasattr(config, "ANTHROPIC_API_KEY") and config.ANTHROPIC_API_KEY
-    else None
-)
+# Initialize OpenRouter client
 openrouter_client = (
     openai.OpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -35,9 +23,6 @@ openrouter_client = (
     if hasattr(config, "OPENROUTER_API_KEY") and config.OPENROUTER_API_KEY
     else None
 )
-
-# Keep backward compatibility
-client = gemini_client
 
 
 class Generation(BaseModel):
@@ -58,13 +43,12 @@ def get_prompt(session_id: str) -> tuple[str, List[str]]:
     current_html = session["current_processed_html"]
     query = session["original_query"]
 
-    # Build context from iterations array and collect image paths
+    # Build context from conversation history and collect image paths
     context_parts = []
     image_path = None
-    agent_iterations = 0
 
-    # Check if this is the first iteration and we have an initial screenshot
-    if len(session["iterations"]) == 0 and session.get("initial_screenshot"):
+    # Check if this is the first request and we have an initial screenshot
+    if len(session["conversation_history"]) == 0 and session.get("initial_screenshot"):
         # Save initial screenshot to file for the first LLM call
         screenshot_dir = "screenshots"
         os.makedirs(screenshot_dir, exist_ok=True)
@@ -88,29 +72,28 @@ def get_prompt(session_id: str) -> tuple[str, List[str]]:
             f"Saved initial screenshot for session {session_id} to {image_path}"
         )
 
-    for iteration in session["iterations"]:
-        if iteration["role"] == "user":
-            if iteration.get("content"):
-                context_parts.append(f"User feedback: {iteration['content']}")
-            if iteration.get("image_path"):
-                image_path = iteration["image_path"]
+    # Build conversation context
+    for message in session["conversation_history"]:
+        if message["role"] == "user":
+            if message.get("content"):
+                context_parts.append(f"User: {message['content']}")
+            if message.get("image_path"):
+                image_path = message["image_path"]
                 context_parts.append(
-                    f"User provided screenshot: {iteration['image_path']}"
+                    f"User provided screenshot: {message['image_path']}"
                 )
-        elif iteration["role"] == "agent" and iteration.get("edits"):
-            agent_iterations += 1
-            context_parts.append(
-                f"Previous edit {agent_iterations}: {str(iteration['edits'])[:200]}..."
-            )
+        elif message["role"] == "agent":
+            if message.get("content"):
+                context_parts.append(f"Assistant: {message['content']}")
+            if message.get("edits"):
+                context_parts.append(
+                    f"Previous changes made: {str(message['edits'])[:200]}..."
+                )
 
-    # Add progress tracking for multi-turn completion
-    if agent_iterations >= 1:
+    # Add instruction for single-turn completion
+    if len(session["conversation_history"]) > 0:
         context_parts.append(
-            f"\nPROGRESS: You have made {agent_iterations} edit(s) so far. Review the current state - if the user's request is sufficiently completed, use GENERATION_COMPLETE. If meaningful work remains, continue editing."
-        )
-    if agent_iterations >= 5:
-        context_parts.append(
-            f"\nIMPORTANT: You've made {agent_iterations} edits. Carefully assess if the original request is now adequately fulfilled. If so, use GENERATION_COMPLETE to avoid unnecessary changes."
+            "\nIMPORTANT: This is a follow-up request. Consider the previous conversation context when making your changes."
         )
 
     context = "\n".join(context_parts) if context_parts else "No previous iterations."
@@ -118,7 +101,10 @@ def get_prompt(session_id: str) -> tuple[str, List[str]]:
     # Build image context if screenshot is available
     image_context = ""
     if image_path:
-        if agent_iterations == 0:
+        # Check if this is the first message in conversation (initial screenshot)
+        is_initial_request = len(session["conversation_history"]) == 0
+
+        if is_initial_request:
             # Initial screenshot context
             image_context = """
 <image_attached>
@@ -162,69 +148,28 @@ Use this visual feedback to inform your next edits and ensure they build upon th
 def forward(
     formatted_prompt: str, image_path: str | None, model_type: str = "openrouter"
 ) -> Generation:
-    """Forward the prompt to the AI model with optional images and return a Generation object"""
+    """Forward the prompt to the OpenRouter API and return a Generation object"""
 
-    # Select the appropriate client based on model_type
-    if model_type == "gemini":
-        if gemini_client is None:
-            logger.error("Gemini client not initialized")
-            return Generation(
-                status="error",
-                message="Gemini client not initialized. Check GEMINI_API_KEY.",
-                edits=None,
-            )
-        selected_client = gemini_client
-    elif model_type == "openai":
-        if openai_client is None:
-            logger.error("OpenAI client not initialized")
-            return Generation(
-                status="error",
-                message="OpenAI client not initialized. Check OPENAI_API_KEY.",
-                edits=None,
-            )
-        selected_client = openai_client
-    elif model_type == "anthropic":
-        if anthropic_client is None:
-            logger.error("Anthropic client not initialized")
-            return Generation(
-                status="error",
-                message="Anthropic client not initialized. Check ANTHROPIC_API_KEY.",
-                edits=None,
-            )
-        selected_client = anthropic_client
-    elif model_type == "openrouter":
-        if openrouter_client is None:
-            logger.error("OpenRouter client not initialized")
-            return Generation(
-                status="error",
-                message="OpenRouter client not initialized. Check OPENROUTER_API_KEY.",
-                edits=None,
-            )
-        selected_client = openrouter_client
-    else:
-        logger.error(f"Unsupported model type: {model_type}")
+    # Only OpenRouter is supported now
+    if openrouter_client is None:
+        logger.error("OpenRouter client not initialized")
         return Generation(
             status="error",
-            message=f"Unsupported model type: {model_type}. Supported types: gemini, openai, anthropic, openrouter",
+            message="OpenRouter client not initialized. Check OPENROUTER_API_KEY.",
             edits=None,
         )
+
+    selected_client = openrouter_client
 
     try:
         import json
 
         logger.info(f"Starting LLM forward call with {model_type}")
 
-        # Handle different model types
-        if model_type == "gemini":
-            text = _call_gemini(selected_client, formatted_prompt, image_path)
-        elif model_type == "openai":
-            text = _call_openai(selected_client, formatted_prompt, image_path)
-        elif model_type == "anthropic":
-            text = _call_anthropic(selected_client, formatted_prompt, image_path)
-        elif model_type == "openrouter":
-            text = _call_openrouter(selected_client, formatted_prompt, image_path)
+        # Call OpenRouter API
+        text = _call_openrouter(selected_client, formatted_prompt, image_path)
 
-        logger.info(f"Received response from {model_type}: {text[:200]}...")
+        logger.info(f"Received response from OpenRouter: {text[:200]}...")
 
         # Parse JSON response - handle markdown code blocks
         try:
@@ -361,10 +306,8 @@ def forward(
                 edits=None,
             )
 
-        if "GENERATION_COMPLETE" in edits:
-            return Generation(status="completed", message=reasoning, edits=None)
-        else:
-            return Generation(status="applied_edit", message=reasoning, edits=edits)
+        # Always return applied_edit status for single-turn responses
+        return Generation(status="applied_edit", message=reasoning, edits=edits)
 
     except Exception as e:
         logger.error(f"Error in LLM forward: {str(e)}", exc_info=True)
@@ -373,91 +316,8 @@ def forward(
         )
 
 
-def _call_gemini(client, formatted_prompt: str, image_path: str | None) -> str:
-    """Call Gemini API with optional image support"""
-    contents = []
-
-    if image_path:
-        logger.info(f"Loading image from path: {image_path}")
-        with open(image_path, "rb") as f:
-            image_bytes = f.read()
-
-        contents.append(
-            types.Part.from_bytes(
-                data=image_bytes,
-                mime_type="image/png",
-            )
-        )
-    contents.append(formatted_prompt)
-
-    logger.info("Calling Gemini API")
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-exp", contents=contents
-    )
-    return response.text
-
-
-def _call_openai(client, formatted_prompt: str, image_path: str | None) -> str:
-    """Call OpenAI API with optional image support"""
-    messages = []
-
-    if image_path:
-        logger.info(f"Loading image from path: {image_path}")
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
-
-        messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": formatted_prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{image_data}"},
-                    },
-                ],
-            }
-        )
-    else:
-        messages.append({"role": "user", "content": formatted_prompt})
-
-    logger.info("Calling OpenAI API")
-    response = client.chat.completions.create(model="gpt-4o-mini", messages=messages)
-    return response.choices[0].message.content
-
-
-def _call_anthropic(client, formatted_prompt: str, image_path: str | None) -> str:
-    """Call Anthropic API with optional image support"""
-    if image_path:
-        logger.info(f"Loading image from path: {image_path}")
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
-
-        content = [
-            {"type": "text", "text": formatted_prompt},
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": image_data,
-                },
-            },
-        ]
-    else:
-        content = formatted_prompt
-
-    logger.info("Calling Anthropic API")
-    response = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=4000,
-        messages=[{"role": "user", "content": content}],
-    )
-    return response.content[0].text
-
-
 def _call_openrouter(client, formatted_prompt: str, image_path: str | None) -> str:
-    """Call OpenRouter API with optional image support using the openai/gpt-oss-20b model"""
+    """Call OpenRouter API with optional image support using configurable model"""
     messages = []
 
     if image_path:
@@ -480,8 +340,8 @@ def _call_openrouter(client, formatted_prompt: str, image_path: str | None) -> s
     else:
         messages.append({"role": "user", "content": formatted_prompt})
 
-    logger.info("Calling OpenRouter API with openai/gpt-oss-20b model")
+    logger.info(f"Calling OpenRouter API with model: {config.OPENROUTER_MODEL}")
     response = client.chat.completions.create(
-        model="meta-llama/llama-4-maverick", messages=messages, max_tokens=4000
+        model=config.OPENROUTER_MODEL, messages=messages, max_tokens=4000
     )
     return response.choices[0].message.content

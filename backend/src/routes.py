@@ -1,23 +1,15 @@
 # --- include all imports here ---
-from datetime import datetime, timedelta
-import json
-import asyncio
 import uuid
-from fastapi import (
-    APIRouter,
-    HTTPException,
-    BackgroundTasks,
-    WebSocket,
-    WebSocketDisconnect,
-)
-from fastapi.responses import HTMLResponse
+from datetime import datetime, timedelta
+from fastapi import APIRouter, HTTPException
+
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional
 from src import db
 
 from src.utils import create_agent_session, get_agent_session
-from src.agent import run_agent_session
-from src.websocket_manager import ws_manager
+from src.agent import process_user_request
+
 from src.logger import get_logger
 from src.models import (
     SharedConfiguration,
@@ -35,7 +27,7 @@ router = APIRouter()
 class StartAgentRequest(BaseModel):
     html: str
     query: str
-    model_type: str = "gemini"
+    model_type: str = "openrouter"
     initial_screenshot: Optional[str] = None
 
 
@@ -53,29 +45,71 @@ def health_check():
     return {"status": "healthy", "message": "Lemur Agent API is running"}
 
 
-@router.websocket("/agent/{session_id}/ws")
-async def websocket_agent_session(websocket: WebSocket, session_id: str):
-    """WebSocket endpoint for agent communication"""
+class UserRequestData(BaseModel):
+    query: str
+    screenshot: Optional[str] = None
+
+
+@router.get("/agent/{session_id}/status")
+async def get_session_status(session_id: str):
+    """Get status and conversation history for an existing session"""
     try:
-        await ws_manager.connect(session_id, websocket)
-        logger.info(f"WebSocket connected for session: {session_id}")
+        session = get_agent_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
 
-        # --- start agent in background ---
-        agent_task = asyncio.create_task(run_agent_session(session_id))
+        return {
+            "success": True,
+            "session_id": session_id,
+            "status": session.get("status", "unknown"),
+            "conversation_history": session.get("conversation_history", []),
+            "created_at": session.get("created_at"),
+            "updated_at": session.get("updated_at"),
+        }
 
-        try:
-            await agent_task
-        except asyncio.CancelledError:
-            logger.info(f"Agent task cancelled for session: {session_id}")
-
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for session: {session_id}")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
-            f"WebSocket error for session {session_id}: {str(e)}", exc_info=True
+            f"Error getting session status {session_id}: {str(e)}", exc_info=True
         )
-    finally:
-        await ws_manager.disconnect(session_id)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/agent/{session_id}/request")
+async def process_agent_request(session_id: str, request: UserRequestData):
+    """Process a user request for an existing session"""
+    try:
+        logger.info(f"Processing request for session: {session_id}")
+
+        # Check if session exists
+        session = get_agent_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Process the user request
+        result = await process_user_request(
+            session_id, request.query, request.screenshot
+        )
+
+        if result.status == "error":
+            raise HTTPException(status_code=500, detail=result.message)
+
+        return {
+            "success": True,
+            "message": result.message,
+            "updated_html": result.updated_html,
+            "session_id": session_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error processing request for session {session_id}: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post("/agent/start", response_model=StartAgentResponse)
@@ -84,15 +118,11 @@ async def start_agent_session(request: StartAgentRequest):
     session_id = str(uuid.uuid4())
     logger.info(f"Creating new agent session: {session_id}")
 
-    # Max iterations is now a fixed config value
-    MAX_ITERATIONS = 10
-
     try:
         create_agent_session(
             session_id,
             request.html,
             request.query,
-            MAX_ITERATIONS,
             request.initial_screenshot,
         )
         logger.info(f"Agent session {session_id} created")
@@ -108,9 +138,6 @@ async def start_agent_session(request: StartAgentRequest):
         raise HTTPException(
             status_code=500, detail=f"Failed to create session: {str(e)}"
         )
-
-
-# --- legacy http endpoints removed - now using websocket ---
 
 
 @router.post("/api/share", response_model=CreateShareResponse)

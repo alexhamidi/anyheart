@@ -206,7 +206,6 @@ def create_agent_session(
     session_id: str,
     html: str,
     query: str,
-    max_iterations: int = 5,
     initial_screenshot: Optional[str] = None,
 ) -> dict:
     """Create a new agent session"""
@@ -218,15 +217,14 @@ def create_agent_session(
     session_data = {
         "id": session_id,
         "status": "created",
-        "max_iterations": max_iterations,
-        "current_iteration": 0,
         "html": html,  # Keep original HTML
         "current_html": html,  # Keep original HTML for final output
         "processed_html": processed_html,  # Processed HTML for LLM
         "current_processed_html": processed_html,  # Current processed HTML
         "replacements": replacements,  # Store replacements for post-processing
         "original_query": query,
-        "iterations": [],
+        "initial_screenshot": initial_screenshot,  # Store initial screenshot for agent context
+        "conversation_history": [],  # Store conversation between user and agent
         "created_at": now,
         "updated_at": now,
     }
