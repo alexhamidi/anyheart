@@ -1,20 +1,25 @@
 // Enhanced frontend with AI agent polling system
 
 let currentAgentSession = null;
-let agentWebSocket = null;
+// Using POST requests for agent communication
 let conversationHistory = [];
-let isCapturingActive = false;
-let captureInterval = null;
-let mostRecentUserPrompt = null;
+// Session persistence for conversation continuity
+let sessionStorageKey = null;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const input = document.getElementById('textInput');
-  const stalkerModeBtn = document.getElementById('stalkerModeBtn');
+  const resetBtn = document.getElementById('resetBtn');
   const clearCacheBtn = document.getElementById('clearCacheBtn');
   const exportUrlBtn = document.getElementById('exportUrlBtn');
 
   const conversationMessages = document.getElementById('conversationMessages');
   const statusDiv = createStatusDiv();
+
+  // Initialize session storage key based on current tab
+  await initializeSessionStorage();
+
+  // Load existing session if available
+  await loadExistingSession();
 
   // Autofocus the input when the popup opens
   input.focus();
@@ -25,46 +30,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Capture button - toggle capture mode
-  stalkerModeBtn.addEventListener('click', async () => {
-    if (!isCapturingActive) {
-      // Start capturing
-      isCapturingActive = true;
-      stalkerModeBtn.textContent = 'Stop';
-      stalkerModeBtn.classList.add('active');
-      stalkerModeBtn.title = 'Stop Capture Mode';
-
-      updateStatus('capturing', 'info');
-
-      // Take initial screenshot
-      await takeScreenshot();
-
-      // Set up interval for continuous screenshots
-      captureInterval = setInterval(async () => {
-        await takeScreenshot();
-      }, 5000); // Take screenshot every 5 seconds
-
-    } else {
-      // Stop capturing
-      isCapturingActive = false;
-      stalkerModeBtn.textContent = 'Capture';
-      stalkerModeBtn.classList.remove('active');
-      stalkerModeBtn.title = 'Capture Mode';
-
-      if (captureInterval) {
-        clearInterval(captureInterval);
-        captureInterval = null;
-      }
-
-      updateStatus('stopped', 'success');
-    }
-  });
-
-  async function takeScreenshot() {
+  // Reset button - restore page to original state
+  resetBtn.addEventListener('click', async () => {
     try {
-      // Request screenshot from background script
+      updateStatus('resetting...', 'info');
+
+      const tabs = await new Promise(resolve => {
+        chrome.tabs.query({ active: true, currentWindow: true }, resolve);
+      });
+
+      const tab = tabs[0];
+
+      // Send reset message to content script
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['logic/content.js']
+      });
+      await new Promise(resolve => setTimeout(resolve, 200));
+
       const response = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({ action: 'takeScreenshot' }, (response) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Content script not responding'));
+        }, 5000);
+
+        chrome.tabs.sendMessage(tab.id, { action: 'restoreOriginal' }, (response) => {
+          clearTimeout(timeout);
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
           } else {
@@ -73,38 +63,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
 
-      if (response.success && response.screenshot) {
-        // Convert data URL to blob
-        const response_data = await fetch(response.screenshot);
-        const blob = await response_data.blob();
-
-        // Create download link
-        const url = URL.createObjectURL(blob);
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `capture-screenshot-${timestamp}.png`;
-
-        // Trigger download
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        if (isCapturingActive) {
-          updateStatus('captured', 'info');
-        } else {
-          updateStatus('saved', 'success');
-        }
+      if (response && response.success) {
+        // Reset session and clear conversation
+        await resetSession();
       } else {
-        updateStatus('failed', 'error');
+        updateStatus('reset failed', 'error');
       }
+
     } catch (error) {
-      console.error('Error taking screenshot:', error);
+      console.error('Error resetting page:', error);
       updateStatus('error', 'error');
     }
-  }
+  });
+
+
 
   // Clear all local storage
   clearCacheBtn.addEventListener('click', async () => {
@@ -203,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         color: #6b7280;
         border: 1px solid rgba(0, 0, 0, 0.08);
         border-radius: 12px;
-        font-size: 11px;
+        font-size: 13px;
         font-weight: 400;
         font-family: inherit;
         display: none;
@@ -245,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function addMessageToConversation(sender, content, type = 'normal') {
     const timestamp = new Date().toLocaleTimeString();
     const message = {
-      sender,
+      role: sender, // Use 'role' to match backend format
       content,
       type,
       timestamp
@@ -259,12 +231,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     conversationHistory.push(message);
     displayConversation();
+
+    // Save session after adding message
+    saveSession();
   }
 
   function displayConversation() {
     // Filter out system messages - they go to status area instead
     const nonSystemMessages = conversationHistory.filter(message =>
-      message.sender.toLowerCase() !== 'system'
+      message.role.toLowerCase() !== 'system'
     );
 
     if (nonSystemMessages.length === 0) {
@@ -276,29 +251,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Display user and assistant messages only
     nonSystemMessages.forEach(message => {
-      const messageDiv = document.createElement('div');
-      messageDiv.className = 'message-glow-container';
+      const messageContainer = document.createElement('div');
+      messageContainer.className = 'message-container';
 
-      // Create glow container with appropriate color
-      const glowContainer = document.createElement('div');
-      glowContainer.className = 'message-glow-container';
-
-      if (message.sender.toLowerCase() === 'assistant') {
-        glowContainer.classList.add('message-glow-green');
+      // Create message content with appropriate styling
+      const messageContent = document.createElement('div');
+      if (message.role.toLowerCase() === 'assistant') {
+        messageContent.className = 'message-green';
       } else {
-        // User messages get blue glow
-        glowContainer.classList.add('message-glow-blue');
+        // User messages get blue styling
+        messageContent.className = 'message-blue';
       }
 
-      // Create inner content container
-      const innerDiv = document.createElement('div');
-      innerDiv.className = 'message-inner';
-      innerDiv.textContent = message.content;
+      messageContent.style.fontSize = '14px';
+      messageContent.style.lineHeight = '1.4';
+      messageContent.style.whiteSpace = 'pre-wrap';
+      messageContent.style.wordWrap = 'break-word';
+      messageContent.style.color = '#1a1a1a';
+      messageContent.textContent = message.content;
 
-      glowContainer.appendChild(innerDiv);
-      messageDiv.appendChild(glowContainer);
-
-      conversationMessages.appendChild(messageDiv);
+      messageContainer.appendChild(messageContent);
+      conversationMessages.appendChild(messageContainer);
     });
 
     // Scroll to bottom
@@ -343,13 +316,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (response && response.html) {
-      console.log('Got page HTML, length:', response.html.length);
+      // Got page HTML for agent processing
 
-      // Clear previous conversation and start fresh
-      clearConversation();
-
-      // Add user message to conversation
       const userPrompt = input.value;
+
+      // Check if we have an existing session
+      if (currentAgentSession) {
+        // Continue existing conversation
+        // Continuing existing session
+        addMessageToConversation('User', userPrompt);
+
+        // Clear input
+        input.value = '';
+
+        // Send user request to existing session
+        await sendUserRequest(currentAgentSession, userPrompt);
+        return;
+      }
+
+      // No existing session - create new one
       addMessageToConversation('User', userPrompt);
 
       updateStatus('capturing initial state...');
@@ -369,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (screenshotResponse.success && screenshotResponse.screenshot) {
           initialScreenshot = screenshotResponse.screenshot;
-          console.log('Captured initial screenshot for agent context');
+          // Captured initial screenshot for agent context
         }
       } catch (error) {
         console.error('Error taking initial screenshot:', error);
@@ -405,8 +390,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Clear input
         input.value = '';
 
-        // Connect WebSocket
-        connectWebSocket(tab.id, sessionData.session_id);
+        // Initialize session with POST requests
+        initializeSession(tab.id, sessionData.session_id);
+
+        // Save the new session
+        await saveSession();
+
+        // Send the initial user query
+        await sendUserRequest(sessionData.session_id, userPrompt, initialScreenshot);
 
       } catch (error) {
         console.error('Error starting agent session:', error);
@@ -415,98 +406,189 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function connectWebSocket(tabId, sessionId) {
-    if (agentWebSocket) {
-      agentWebSocket.close();
-    }
+  // Initialize agent session via POST requests
+  function initializeSession(tabId, sessionId) {
+    // Session initialized successfully
+    updateStatus('ready');
 
-    const wsUrl = `${BACKEND_URL.replace('http', 'ws')}/agent/${sessionId}/ws`;
-    agentWebSocket = new WebSocket(wsUrl);
-
-    agentWebSocket.onopen = () => {
-      console.log('WebSocket connected');
-      updateStatus('ready');
-    };
-
-    agentWebSocket.onmessage = async (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        console.log('WebSocket message:', message);
-
-        if (message.type === 'apply_edit') {
-          // --- apply html changes ---
-          chrome.tabs.sendMessage(tabId, {
-            action: 'applyAgentEdit',
-            newContent: message.html,
-            sessionId: sessionId
-          });
-
-          addMessageToConversation('Assistant', message.message);
-          addMessageToConversation('System', 'Applied HTML changes to page');
-          updateStatus('observing');
-
-        } else if (message.type === 'completed') {
-          addMessageToConversation('System', 'Agent session completed successfully');
-          updateStatus('completed', 'success');
-          agentWebSocket.close();
-          currentAgentSession = null;
-
-        } else if (message.type === 'error') {
-          addMessageToConversation('System', `Agent session failed: ${message.message}`);
-          updateStatus('failed', 'error');
-          agentWebSocket.close();
-          currentAgentSession = null;
-        } else if (message.type === 'agent_message') {
-          // Handle general agent messages
-          addMessageToConversation('Assistant', message.message || message.content);
-        } else if (message.type === 'status_update') {
-          // Handle status updates
-          addMessageToConversation('System', message.message || message.content);
-          updateStatus('processing', 'info');
-        } else {
-          // Handle any other message types from the agent
-          if (message.message || message.content) {
-            addMessageToConversation('Assistant', message.message || message.content);
-          }
-        }
-
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
-      }
-    };
-
-    agentWebSocket.onclose = () => {
-      console.log('WebSocket disconnected');
-      updateStatus('session complete');
-    };
-
-    agentWebSocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      updateStatus('error', 'error');
-    };
+    // Store session info for later use
+    window.currentTabId = tabId;
+    window.currentSessionId = sessionId;
   }
 
-  // --- send observation via websocket ---
+  // Send user request via POST
+  async function sendUserRequest(sessionId, query, screenshot = null) {
+    try {
+      updateStatus('processing', 'info');
+
+      const response = await fetch(`${BACKEND_URL}/agent/${sessionId}/request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: query,
+          screenshot: screenshot
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.detail || 'Request failed');
+      }
+
+      // Handle successful response
+      if (result.updated_html) {
+        // Apply HTML changes to the page
+        chrome.tabs.sendMessage(window.currentTabId, {
+          action: 'applyAgentEdit',
+          newContent: result.updated_html,
+          sessionId: sessionId
+        });
+        addMessageToConversation('System', 'Applied HTML changes to page');
+      }
+
+      // Add assistant response to conversation
+      addMessageToConversation('Assistant', result.message);
+      updateStatus('ready');
+
+    } catch (error) {
+      console.error('Error sending user request:', error);
+      addMessageToConversation('System', `Error: ${error.message}`, 'error');
+      updateStatus('error', 'error');
+    }
+  }
+
+  // --- send follow-up user request ---
   window.sendObservation = function (observationData) {
-    if (agentWebSocket && agentWebSocket.readyState === WebSocket.OPEN) {
-      agentWebSocket.send(JSON.stringify({
-        type: 'observation',
-        data: observationData
-      }));
+    if (window.currentSessionId && observationData.query) {
+      // Send as a new user request
+      sendUserRequest(window.currentSessionId, observationData.query, observationData.screenshot);
     }
   };
 
   // --- listen for messages from content script ---
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'sendObservation') {
-      // Forward observation from content script to WebSocket
-      if (agentWebSocket && agentWebSocket.readyState === WebSocket.OPEN) {
-        agentWebSocket.send(JSON.stringify({
-          type: 'observation',
-          data: request.data
-        }));
-        console.log('Forwarded observation from content script to WebSocket');
+      // Forward observation as a new user request
+      if (window.currentSessionId && request.data.query) {
+        sendUserRequest(window.currentSessionId, request.data.query, request.data.screenshot);
+        // Forwarded observation from content script
       }
     }
   });
+
+  // === SESSION MANAGEMENT FUNCTIONS ===
+
+  async function initializeSessionStorage() {
+    try {
+      const tabs = await new Promise(resolve => {
+        chrome.tabs.query({ active: true, currentWindow: true }, resolve);
+      });
+
+      const tab = tabs[0];
+      const url = new URL(tab.url);
+      sessionStorageKey = `anyheart_session_${url.origin}${url.pathname}`;
+      // Session storage key generated
+    } catch (error) {
+      console.error('Error initializing session storage:', error);
+      sessionStorageKey = 'anyheart_session_default';
+    }
+  }
+
+  async function loadExistingSession() {
+    try {
+      if (!sessionStorageKey) return;
+
+      const result = await chrome.storage.local.get(sessionStorageKey);
+      const sessionData = result[sessionStorageKey];
+
+      if (sessionData && sessionData.sessionId) {
+        // Found stored session
+
+        // Validate session still exists on backend
+        try {
+          const response = await fetch(`${BACKEND_URL}/agent/${sessionData.sessionId}/status`);
+
+          if (response.ok) {
+            const backendSession = await response.json();
+            // Session validated on backend
+
+            // Restore session state
+            currentAgentSession = sessionData.sessionId;
+            conversationHistory = sessionData.conversationHistory || [];
+
+            // Restore UI
+            displayConversationHistory();
+            updateStatus('ready');
+
+            // Store session info for later use
+            window.currentSessionId = sessionData.sessionId;
+          } else {
+            // Session no longer exists on backend, clearing local storage
+            await chrome.storage.local.remove(sessionStorageKey);
+          }
+        } catch (error) {
+          // Error validating session on backend, clearing local storage
+          await chrome.storage.local.remove(sessionStorageKey);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading existing session:', error);
+    }
+  }
+
+  async function saveSession() {
+    try {
+      if (!sessionStorageKey || !currentAgentSession) return;
+
+      const sessionData = {
+        sessionId: currentAgentSession,
+        conversationHistory: conversationHistory,
+        timestamp: Date.now()
+      };
+
+      await chrome.storage.local.set({
+        [sessionStorageKey]: sessionData
+      });
+
+      console.log('Session saved:', currentAgentSession);
+    } catch (error) {
+      console.error('Error saving session:', error);
+    }
+  }
+
+  async function resetSession() {
+    try {
+      // Clear session storage
+      if (sessionStorageKey) {
+        await chrome.storage.local.remove(sessionStorageKey);
+      }
+
+      // Reset local state
+      currentAgentSession = null;
+      conversationHistory = [];
+      window.currentSessionId = null;
+
+      // Clear UI
+      clearConversation();
+      updateStatus('reset complete', 'success');
+
+      console.log('Session reset complete');
+    } catch (error) {
+      console.error('Error resetting session:', error);
+    }
+  }
+
+  function displayConversationHistory() {
+    // Clear existing messages
+    conversationMessages.innerHTML = '';
+
+    // Display each message in the history
+    conversationHistory.forEach(msg => {
+      addMessageToConversation(msg.role, msg.content, msg.type || 'normal');
+    });
+  }
+
 });

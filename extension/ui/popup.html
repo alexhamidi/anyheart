@@ -17,7 +17,7 @@
             color: #1a1a1a;
             display: flex;
             flex-direction: column;
-            font-size: 12px;
+            font-size: 14px;
             line-height: 1.3;
             box-sizing: border-box;
             overflow: hidden;
@@ -29,102 +29,9 @@
 
 
 
-        .input-glow-container {
+        .input-container {
             position: relative;
             width: 100%;
-        }
-
-        .import-progress-glow::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 0.75rem !important;
-            z-index: 1;
-            background: linear-gradient(90deg,
-                    rgba(90, 200, 250, 0.05) 0%,
-                    rgba(0, 122, 255, 0.05) 25%,
-                    rgba(76, 217, 100, 0.05) 50%,
-                    rgba(0, 122, 255, 0.05) 75%,
-                    rgba(90, 200, 250, 0.05) 100%);
-            background-size: 200% 100%;
-            animation: border-glow-rotate 8s linear infinite;
-            box-shadow: inset 0 0 10px 1px rgba(0, 122, 255, 0.1);
-            opacity: 1;
-            pointer-events: none;
-        }
-
-        .import-progress-glow::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            left: 0;
-            border-radius: 0.75rem !important;
-            z-index: 0;
-            background: linear-gradient(90deg,
-                    rgba(0, 122, 255, 0.04) 0%,
-                    rgba(76, 217, 100, 0.04) 33.3%,
-                    rgba(90, 200, 250, 0.04) 66.6%,
-                    rgba(0, 122, 255, 0.04) 100%);
-            background-size: 300% 100%;
-            animation: border-glow-rotate 12s linear infinite reverse;
-            opacity: 1;
-            pointer-events: none;
-            -webkit-mask: radial-gradient(circle at center, transparent 70%, black 100%);
-            mask: radial-gradient(circle at center, transparent 70%, black 100%);
-        }
-
-        .ai-border-glow>* {
-            position: relative;
-            z-index: 3;
-            pointer-events: auto;
-        }
-
-        @keyframes border-glow-rotate {
-            0% {
-                background-position: 0% 50%;
-            }
-
-            100% {
-                background-position: 400% 50%;
-            }
-        }
-
-        @keyframes border-glow-shift {
-            0% {
-                transform: translateX(0) scale(1);
-            }
-
-            25% {
-                transform: translateY(-1px) scale(1.01);
-            }
-
-            50% {
-                transform: translateX(1px) scale(1);
-            }
-
-            75% {
-                transform: translateY(1px) scale(0.99);
-            }
-
-            100% {
-                transform: translateX(0) scale(1);
-            }
-        }
-
-        @keyframes border-glow-pulse {
-            0% {
-                box-shadow: inset 0 0 15px 2px rgba(120, 120, 255, 0.3);
-            }
-
-            50% {
-                box-shadow: inset 0 0 25px 5px rgba(120, 120, 255, 0.6);
-            }
-
-            100% {
-                box-shadow: inset 0 0 15px 2px rgba(120, 120, 255, 0.3);
-            }
         }
 
         @keyframes fadeIn {
@@ -142,21 +49,19 @@
         #textInput {
             width: 100%;
             padding: 8px 12px;
-            border: 1px solid rgba(225, 229, 233, 0.3);
+            border: 2px solid #d1d5db;
             border-radius: 0.75rem;
             box-sizing: border-box;
-            background-color: rgba(255, 255, 255, 0.1);
+            background-color: #ffffff;
             color: #1a1a1a;
-            font-size: 13px;
+            font-size: 15px;
             transition: all 0.2s ease;
-            position: relative;
-            z-index: 3;
         }
 
         #textInput:focus {
             outline: none;
-            border-color: rgba(0, 122, 255, 0.2);
-            background-color: rgba(255, 255, 255, 0.2);
+            border-color: #6b7280;
+            background-color: #f9fafb;
         }
 
         #textInput::placeholder {
@@ -196,7 +101,7 @@
             border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 12px;
             cursor: pointer;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 400;
             text-transform: lowercase;
             font-family: inherit;
@@ -247,122 +152,29 @@
             padding: 30px 15px;
             text-align: center;
             color: #8e8e93;
-            font-size: 12px;
+            font-size: 14px;
         }
 
-        .message-glow-container {
-            position: relative;
+        .message-container {
             width: 100%;
             margin-bottom: 8px;
         }
 
-        /* Blue glow for user messages */
-        .message-glow-blue::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 0.75rem !important;
-            z-index: 1;
-            background: linear-gradient(90deg,
-                    rgba(0, 122, 255, 0.05) 0%,
-                    rgba(90, 200, 250, 0.05) 25%,
-                    rgba(0, 122, 255, 0.05) 50%,
-                    rgba(90, 200, 250, 0.05) 75%,
-                    rgba(0, 122, 255, 0.05) 100%);
-            background-size: 200% 100%;
-            animation: border-glow-rotate 8s linear infinite;
-            box-shadow: inset 0 0 10px 1px rgba(0, 122, 255, 0.1);
-            opacity: 1;
-            pointer-events: none;
-        }
-
-        .message-glow-blue::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            left: 0;
-            border-radius: 0.75rem !important;
-            z-index: 0;
-            background: linear-gradient(90deg,
-                    rgba(0, 122, 255, 0.04) 0%,
-                    rgba(90, 200, 250, 0.04) 33.3%,
-                    rgba(0, 122, 255, 0.04) 66.6%,
-                    rgba(90, 200, 250, 0.04) 100%);
-            background-size: 300% 100%;
-            animation: border-glow-rotate 12s linear infinite reverse;
-            opacity: 1;
-            pointer-events: none;
-            -webkit-mask: radial-gradient(circle at center, transparent 70%, black 100%);
-            mask: radial-gradient(circle at center, transparent 70%, black 100%);
-        }
-
-        /* Green glow for assistant messages */
-        .message-glow-green::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 0.75rem !important;
-            z-index: 1;
-            background: linear-gradient(90deg,
-                    rgba(52, 199, 89, 0.05) 0%,
-                    rgba(76, 217, 100, 0.05) 25%,
-                    rgba(52, 199, 89, 0.05) 50%,
-                    rgba(76, 217, 100, 0.05) 75%,
-                    rgba(52, 199, 89, 0.05) 100%);
-            background-size: 200% 100%;
-            animation: border-glow-rotate 8s linear infinite;
-            box-shadow: inset 0 0 10px 1px rgba(52, 199, 89, 0.1);
-            opacity: 1;
-            pointer-events: none;
-        }
-
-        .message-glow-green::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            left: 0;
-            border-radius: 0.75rem !important;
-            z-index: 0;
-            background: linear-gradient(90deg,
-                    rgba(52, 199, 89, 0.04) 0%,
-                    rgba(76, 217, 100, 0.04) 33.3%,
-                    rgba(52, 199, 89, 0.04) 66.6%,
-                    rgba(76, 217, 100, 0.04) 100%);
-            background-size: 300% 100%;
-            animation: border-glow-rotate 12s linear infinite reverse;
-            opacity: 1;
-            pointer-events: none;
-            -webkit-mask: radial-gradient(circle at center, transparent 70%, black 100%);
-            mask: radial-gradient(circle at center, transparent 70%, black 100%);
-        }
-
-
-
-        .message-glow-container>* {
-            position: relative;
-            z-index: 3;
-            pointer-events: auto;
-        }
-
-        .message-inner {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        .message-blue {
+            background-color: #eff6ff;
+            border: 2px solid #93c5fd;
             border-radius: 0.75rem;
-            box-sizing: border-box;
-            background-color: rgba(255, 255, 255, 0.1);
-            color: #1a1a1a;
-            font-size: 12px;
-            line-height: 1.4;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            position: relative;
-            z-index: 3;
+            padding: 12px;
         }
+
+        .message-green {
+            background-color: #f0fdf4;
+            border: 2px solid #86efac;
+            border-radius: 0.75rem;
+            padding: 12px;
+        }
+
+
 
 
 
@@ -374,7 +186,7 @@
 
 <body>
     <div class="controls">
-        <div class="input-glow-container import-progress-glow ai-border-glow">
+        <div class="input-container">
             <input type="text" placeholder="Enter text..." id="textInput" autofocus>
         </div>
     </div>
@@ -392,7 +204,7 @@
             <!-- Status messages will appear here -->
         </div>
         <div class="button-controls">
-            <button class="control-btn" id="stalkerModeBtn" title="Capture Mode">Capture</button>
+            <button class="control-btn" id="resetBtn" title="Reset Page">Reset</button>
             <button class="control-btn" id="clearCacheBtn" title="Clear Cache">Clear</button>
             <button class="control-btn" id="exportUrlBtn" title="Export Shareable URL">Export</button>
         </div>

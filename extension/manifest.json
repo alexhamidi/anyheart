@@ -1,17 +1,27 @@
 {
     "manifest_version": 3,
-    "name": "lemur",
+    "name": "Anyheart",
     "version": "1.0",
     "description": "Make any website lovable",
+    "icons": {
+        "16": "icon.png",
+        "32": "icon.png",
+        "48": "icon.png",
+        "128": "icon.png"
+    },
     "action": {
         "default_popup": "ui/popup.html",
-        "default_title": "Lemur - Make any website lovable"
-      },
+        "default_title": "Anyheart - Make any website lovable",
+        "default_icon": {
+            "16": "icon.png",
+            "32": "icon.png",
+            "48": "icon.png",
+            "128": "icon.png"
+        }
+    },
     "permissions": [
         "storage",
         "activeTab",
-        "notifications",
-        "contextMenus",
         "background",
         "scripting"
     ],
@@ -22,18 +32,24 @@
     "background": {
         "service_worker": "logic/background.js"
     },
-    "content_scripts": [{
-        "matches": ["https://*/*", "http://*/*"],
-        "js": ["logic/content.js"],
-        "run_at": "document_end"
-    }],
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*/*",
+                "http://*/*"
+            ],
+            "js": [
+                "logic/content.js"
+            ],
+            "run_at": "document_end"
+        }
+    ],
     "commands": {
         "_execute_action": {
             "suggested_key": {
                 "default": "Ctrl+Shift+Y"
             },
-            "description": "Open Lemur popup"
+            "description": "Open Anyheart popup"
         }
     }
 }
-
